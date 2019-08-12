@@ -12,8 +12,11 @@ python iterative_reranking_v3.py --gold ../../worldtree_corpus_textgraphs2019sha
 3. Download the pretrained model here : DropBoxLink (will update this).
 
 
+## MAP Scores on Test pre and post reranking:
+Pre : 0.398283
+Post: 0.413025
 
-## MAP Scores distribution pre and post reranking 
+## MAP Scores distribution pre and post reranking on DEV
 | Param          | PreReranking | ReRanked till 15  | 
 |----------------|--------------|-------------------|
 | MAP            |0.3890813483823633 |0.42357975830537303| 
