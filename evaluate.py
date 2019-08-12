@@ -5,7 +5,7 @@ import sys
 import warnings
 from collections import namedtuple, OrderedDict
 from functools import partial
-
+from tqdm import tqdm
 import pandas as pd
 
 
@@ -87,7 +87,7 @@ def average_precision(ranks):
 def mean_average_precision_score(gold, pred, callback=None):
     total, count = 0., 0
 
-    for question in gold.values():
+    for question in tqdm(gold.values()):
         if question.id in pred:
             ranks = compute_ranks(list(question.explanations), pred[question.id])
 

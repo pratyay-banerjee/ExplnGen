@@ -1,3 +1,13 @@
+ExplnGen using Language Models and Iterative Re-ranking
+========                                                                      
+TextGraphs 2019 Shared Task Submission
+
+
+
+
+### Following is from the source git repo :: 
+
+
 TextGraphs-13 Shared Task on Multi-Hop Inference Explanation Regeneration
 =========================================================================
 
@@ -22,7 +32,7 @@ For this question, it's highly unlikely that one could find a passage in a corpu
 4. Fruits are kinds of foods.
 5. An apple is a kind of fruit.
 
-Combining each of these facts is often modeled as a graph traversal problem, where one must "hop" from some starting fact (say, fact 1) to other, related facts, until one has enough facts to infer the answer.  This is illustrated below: 
+                Combining each of these facts is often modeled as a graph traversal problem, where one must "hop" from some starting fact (say, fact 1) to other, related facts, until one has enough facts to infer the answer.  This is illustrated below: 
 
 ![Example explanation graph](images/example-girl-eating-apple.jpg)
 

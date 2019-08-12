@@ -34,6 +34,7 @@ def main():
 
     parser = argparse.ArgumentParser()
     parser.add_argument('-n', '--nearest', type=int, default=10)
+    parser.add_argument('fname')
     parser.add_argument('tables')
     parser.add_argument('questions', type=argparse.FileType('r', encoding='UTF-8'))
     args = parser.parse_args()
@@ -45,8 +46,14 @@ def main():
             explanations += read_explanations(os.path.join(path, file))
 
     df_q = pd.read_csv(args.questions, sep='\t')
-    df_e = pd.DataFrame(explanations, columns=('uid', 'text'))
+    df_e = pd.DataFrame(explanations )
 
+    print(df_e.columns)
+    #df_q[['questionID','originalQuestionID','Question','AnswerKey','explanation']].to_csv(args.fname)
+    #df_e.to_csv("explanations.csv")
+    
+    #print(df_q.head(),df_e.head()) 
+'''
     vectorizer = TfidfVectorizer().fit(df_q['Question']).fit(df_e['text'])
     X_q = vectorizer.transform(df_q['Question'])
     X_e = vectorizer.transform(df_e['text'])
@@ -55,7 +62,7 @@ def main():
     for i_question, distances in enumerate(X_dist):
         for i_explanation in np.argsort(distances)[:args.nearest]:
             print('{}\t{}'.format(df_q.loc[i_question]['questionID'], df_e.loc[i_explanation]['uid']))
-
+'''
 
 if '__main__' == __name__:
     main()
