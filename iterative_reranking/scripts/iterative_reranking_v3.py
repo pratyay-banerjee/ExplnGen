@@ -3,6 +3,12 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+'''
+How to Run this script:
+python iterative_reranking_v3.py --use_cache --gold ../../worldtree_corpus_textgraphs2019sharedtask_withgraphvis/questions/ARC-Elementary+EXPL-Dev.tsv --eval --expfname ../../data/explanations.csv --args.fname outpreds.txt
+'''
+
+
 import operator
 import spacy
 import nltk
@@ -26,12 +32,8 @@ from tqdm import tqdm
 import pandas as pd
 from pprint import pprint
 
-
-print("Loading stopwords")
-stpwords =  set(stopwords.words('english'))
-stemmer = PorterStemmer()
-print("Loading Spacy")
-nlp = spacy.load("en_core_web_lg",disable=["ner"])
+print("Loading Spacy: en_core_web_lg")
+nlp = spacy.load("en_core_web_lg",disable=["ner","parser","tagger"])
 docmap={}
 explanation_map={}
 hypmap={}
@@ -99,13 +101,20 @@ def average_precision(ranks):
         total += precision
     return total / len(ranks)
 
-
-def mean_average_precision_score(gold, pred, callback=None):
+def mean_average_precision_score(gold, pred,callback=None,role=None,length=None):
     total, count = 0., 0
     for question in tqdm(gold.values()):
         if question.id in pred:
-#             print(question.explanations)
-            ranks = compute_ranks(list(question.explanations), pred[question.id])
+            true_ids = []
+            if role:
+                for k,v in question.explanations.items():
+                    if v.role == role:
+                        true_ids.append(k)
+            else:
+                true_ids = list(question.explanations)
+            if length and len(true_ids)!=length:
+                continue
+            ranks = compute_ranks(true_ids, pred[question.id])
             score = average_precision(ranks)
             if not math.isfinite(score):
                 score = 0.
@@ -191,17 +200,8 @@ def rerank(hyp,tups,exp_exp_simscore,hyp_exp_simscore,topk=20,start=0):
         ixx+=1
         temp = []
         for tup in src[start:start+topk]:
-#             doc = get_doc(tup[1])
-#             if done.get(tup[1],False):
-#                 continue
             numerinfo = information_map_n.get(tup[1],0)
             denominfo = information_map_d.get(tup[1],0)
-#             for selfact in result:
-#                 fact = selfact[1]
-#                 fact_score = selfact[2]
-#                 similarity_with_tup = exp_exp_simscore[fact][tup[1]]
-#                 numerinfo += similarity_with_tup*fact_score
-#                 denominfo += fact_score
             similarity_with_tup = exp_exp_simscore[curfact][tup[1]]
             fact_score = cur_tup[2]
             numerinfo += similarity_with_tup*fact_score
@@ -218,12 +218,10 @@ def rerank(hyp,tups,exp_exp_simscore,hyp_exp_simscore,topk=20,start=0):
         result.append(tup)
         if [tup[0],tup[1],tup[2]] in src:
             src.remove([tup[0],tup[1],tup[2]])
-#         done[tup[1]]=True
         prev = cur
         curfact = tup[1]
         cur_tup = tup
         cur = get_doc(tup[1])
-#     print(cur,prev)
     result.extend(src)
     return list(result)
 
@@ -251,69 +249,69 @@ def main():
                         default=None,
                         type=str,
                         required=True,
-                        help="Source QuestionAnswer File")
-    parser.add_argument("--scorefname", default=None, type=str, required=True,
+                        help="Source QuestionAnswer File/Name of output score file name")
+    parser.add_argument("--scorefname", default=None, type=str, required=False,
                         help="Score File of source")
-    parser.add_argument("--expfname", default=None, type=str, required=True,
+    parser.add_argument("--expfname", default=None, type=str, required=False,
                         help="Explanation File")
-    parser.add_argument("--docmap", default=None, type=str, required=True,
+    parser.add_argument("--docmap", default=None, type=str, required=False,
                         help="PreComputed Spacy Docs")
     parser.add_argument('--gold', type=argparse.FileType('r', encoding='UTF-8'), required=False)
-    parser.add_argument('--eval', action='store_true',
-                        help="Whether to do eval param search.")
-    parser.add_argument("--topk",default=15,type=int,help="Topk for prediction")
-    
-    
+    parser.add_argument('--eval', action='store_true',help="Whether to do eval param search.")
+    parser.add_argument("--topk",default=16,type=int,help="Topk for prediction")
+    parser.add_argument('--use_cache', action='store_true',help="Whether to use pickled files, present in current folder")
+
+ 
     args = parser.parse_args()
-    print("Loading Doc Map")
-    docmap = load_doc_map(args.docmap)
-    scores = pd.read_csv(args.scorefname,delimiter="\t",names=["id","score"])
-    orig = pd.read_csv(args.fname,delimiter="\t",names=["id","hyp","fact","label"])
-    merged = pd.merge(scores, orig, on='id')
-    
     explanation_map = load_explanations(args.expfname)
     
-    print("Loading Explanation Similarity Map")
-    exp_exp_simscore = load_simmap(explanation_map,explanation_map,"expexpmap.pickled")
-    print(exp_exp_simscore['flexibility is a property of a material']['flexibility is a property of a material'])
-    
-    print("Loading Hypothesis and Scoring Map")
-    
-    if False:
-        scoremap,hypmap =get_score_map(merged)
-        save_maps("devscoremap.pickled",scoremap)
-        save_maps("devhypmap.pickled",hypmap)
-    elif args.eval:
+    if args.use_cache:
+        print("Using Cache")
+        print("Loading Doc Map")
+        docmap = load_doc_map("docmap.pickled")
+        print("Loading Explanation Similarity Map")
+        exp_exp_simscore = load_simmap(explanation_map,explanation_map,"expexpmap.pickled")
+        print("Test",exp_exp_simscore['flexibility is a property of a material']['flexibility is a property of a material'])
+        print("Loading Hypothesis and Scoring Map")
         scoremap = load_doc_map("devscoremap.pickled")
+        print("Loading Hyp-Explanation Similarity Map")
         hypmap = load_doc_map("devhypmap.pickled")
-    else:
-        scoremap,hypmap =get_score_map(merged)
+        hyp_exp_simscore = load_doc_map("devhypexpmap.pickled")
         
-    print("Loading Hyp-Explanation Similarity Map")
-    if args.eval:
-        hyp_exp_simscore = load_simmap(hypmap,explanation_map,"devhypexpmap.pickled")
     else:
+        print("Loading Scores")
+        scores = pd.read_csv(args.scorefname,delimiter="\t",names=["id","score"])
+        orig = pd.read_csv(args.fname,delimiter="\t",names=["id","hyp","fact","label"])
+        merged = pd.merge(scores, orig, on='id')
+        print("Loading Explanation Similarity Map")
+        exp_exp_simscore = load_simmap(explanation_map,explanation_map,"expexpmap.pickled")
+        print("Test:",exp_exp_simscore['flexibility is a property of a material']['flexibility is a property of a material'])
+        print("Loading Hypothesis and Scoring Map")
+        scoremap,hypmap =get_score_map(merged)
+        print("Loading Hyp-Explanation Similarity Map")
         hyp_exp_simscore = load_simmap(hypmap,explanation_map)
-    
-#     if True:
-#         save_maps("expexpmap.pickled",exp_exp_simscore)
-#         save_maps("devhypexpmap.pickled",hyp_exp_simscore)
+
     
     if args.eval:
         topkmap = {}
         gold = load_gold(args.gold)
-        for topk in tqdm(range(16,17),desc="Running for Topk:"):
+        for topk in tqdm([0,15,16],desc="Running for Topk:"):
             ir_dataset_f2 = rerank_dataframe(scoremap,hypmap,exp_exp_simscore,hyp_exp_simscore,topk=topk)
             outfname = write_rerank_file(ir_dataset_f2,args.fname+str(topk))
             pred =  load_pred(outfname)
             # callback is optional, here it is used to print intermediate results to STDERR
-            mean_ap = mean_average_precision_score(
-                gold, pred,
-#                 callback=partial(print, file=sys.stderr)
-            )
-
+#             mean_ap = mean_average_precision_score(gold, pred, callback=partial(print, file=sys.stderr))
+            mean_ap = mean_average_precision_score(gold, pred)
             print('MAP: ', mean_ap)
             topkmap[topk] = mean_ap
+            for role in ['LEXGLUE', 'ROLE', 'GROUNDING', 'BACKGROUND', 'NE', 'CENTRAL', 'NEG']:
+                mean_ap = mean_average_precision_score(gold, pred,role=role)
+                print('MAP '+ role+ " :", mean_ap)
+                topkmap[str(topk) + ' MAP '+ role+ " :"] = mean_ap
+            for length in range(1,17):
+                mean_ap = mean_average_precision_score(gold, pred,length=length)
+                print('MAP '+ str(length)+ " :", mean_ap)
+                topkmap[str(topk) + ' MAP '+ str(length)+ " :"] = mean_ap
 
         pprint(topkmap)
     else:
