@@ -31,6 +31,7 @@ from functools import partial
 from tqdm import tqdm
 import pandas as pd
 from pprint import pprint
+import json
 
 print("Loading Spacy: en_core_web_lg")
 nlp = spacy.load("en_core_web_lg",disable=["ner","parser","tagger"])
@@ -45,18 +46,18 @@ class ListShouldBeEmptyWarning(UserWarning):
     pass
 
 
-Question = namedtuple('Question', 'id explanations')
+Question = namedtuple('Question', 'id explanations question')
 Explanation = namedtuple('Explanation', 'id role')
 
 
 def load_gold(filepath_or_buffer, sep='\t'):
     df = pd.read_csv(filepath_or_buffer, sep=sep)
     gold = OrderedDict()
-    for _, row in df[['questionID', 'explanation']].dropna().iterrows():
+    for _, row in df[['questionID', 'explanation','Question']].dropna().iterrows():
         explanations = OrderedDict((uid.lower(), Explanation(uid.lower(), role))
                                    for e in row['explanation'].split()
                                    for uid, role in (e.split('|', 1),))
-        question = Question(row['questionID'].lower(), explanations)
+        question = Question(row['questionID'].lower(), explanations,row['Question'])
         gold[question.id] = question
 
     return gold
@@ -101,9 +102,11 @@ def average_precision(ranks):
         total += precision
     return total / len(ranks)
 
-def mean_average_precision_score(gold, pred,callback=None,role=None,length=None):
+def mean_average_precision_score(gold, pred,callback=None,role=None,length=None,verbose=None,explanation_map=None):
     total, count = 0., 0
+    at_least_one = 0
     for question in tqdm(gold.values()):
+        present=False
         if question.id in pred:
             true_ids = []
             if role:
@@ -123,7 +126,36 @@ def mean_average_precision_score(gold, pred,callback=None,role=None,length=None)
             count += 1
             if callback:
                 callback(question.id, score)
-
+            if verbose:
+                if ranks[0]>30:
+                    print("NOT_PRESENT_AT_ALL")
+                if score != 1:
+                    print(question.id,"SCORE",score,question.question)
+                    print("Predicted Ranks",ranks)
+                    explanation_texts = [(idx,explanation_map.get(idx,"NOT_FOUND")) for idx in true_ids]
+                    predicted_texts = [(idx,explanation_map.get(idx,"NOT_FOUND")) for idx in pred[question.id][0:30]]
+                    print("Top Similar Facts to Gold")
+                    simfacts = {}
+                    for goldfact in explanation_texts:
+                        simfacts[goldfact[1]]=[]
+                        gdoc = get_doc(goldfact[1])
+                        for fact in predicted_texts:
+                            fdoc = get_doc(fact[1])
+                            score = gdoc.similarity(fdoc)
+                            if score>0.8:
+                                simfacts[goldfact[1]].append([fact[1],score])
+                        sorted_facts= list(sorted(simfacts[goldfact[1]],key=operator.itemgetter(-1),reverse=True))
+                        print(goldfact[1])
+                        if len(sorted_facts)>0 and sorted_facts[0][-1] != 1:
+                            for tup in sorted_facts:
+                                print("\t"+str(tup))
+                        else:
+                            present=True
+            if present:
+                at_least_one+=1                    
+                         
+                    
+    print("ATLEAST_ONE",at_least_one,count)
     mean_ap = total / count if count > 0 else 0.
     return mean_ap
 
@@ -301,17 +333,17 @@ def main():
             pred =  load_pred(outfname)
             # callback is optional, here it is used to print intermediate results to STDERR
 #             mean_ap = mean_average_precision_score(gold, pred, callback=partial(print, file=sys.stderr))
-            mean_ap = mean_average_precision_score(gold, pred)
+            mean_ap = mean_average_precision_score(gold, pred,verbose=True,explanation_map=explanation_map)
             print('MAP: ', mean_ap)
             topkmap[topk] = mean_ap
-            for role in ['LEXGLUE', 'ROLE', 'GROUNDING', 'BACKGROUND', 'NE', 'CENTRAL', 'NEG']:
-                mean_ap = mean_average_precision_score(gold, pred,role=role)
-                print('MAP '+ role+ " :", mean_ap)
-                topkmap[str(topk) + ' MAP '+ role+ " :"] = mean_ap
-            for length in range(1,17):
-                mean_ap = mean_average_precision_score(gold, pred,length=length)
-                print('MAP '+ str(length)+ " :", mean_ap)
-                topkmap[str(topk) + ' MAP '+ str(length)+ " :"] = mean_ap
+#             for role in ['LEXGLUE', 'ROLE', 'GROUNDING', 'BACKGROUND', 'NE', 'CENTRAL', 'NEG']:
+#                 mean_ap = mean_average_precision_score(gold, pred,role=role)
+#                 print('MAP '+ role+ " :", mean_ap)
+#                 topkmap[str(topk) + ' MAP '+ role+ " :"] = mean_ap
+#             for length in range(1,17):
+#                 mean_ap = mean_average_precision_score(gold, pred,length=length)
+#                 print('MAP '+ str(length)+ " :", mean_ap)
+#                 topkmap[str(topk) + ' MAP '+ str(length)+ " :"] = mean_ap
 
         pprint(topkmap)
     else:
